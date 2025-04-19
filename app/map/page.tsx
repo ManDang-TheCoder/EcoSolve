@@ -88,8 +88,14 @@ const useMap = dynamic(
   { ssr: false }
 ) as any;
 
-// Add Leaflet CSS
-import 'leaflet/dist/leaflet.css';
+// Dynamically import Leaflet CSS on client side only
+const LeafletCSS = () => {
+  useEffect(() => {
+    // Only import on client side
+    import('leaflet/dist/leaflet.css');
+  }, []);
+  return null;
+};
 
 // Types for environmental issues
 interface IssueMarker {
@@ -587,9 +593,25 @@ export default function MapPage() {
   const LocationMarker = () => {
     // This will only be called on the client side due to dynamic import
     const map = useMap();
+    const [userIcon, setUserIcon] = useState<any>(null);
+    
+    // Create icon only on client side
+    useEffect(() => {
+      if (typeof window !== 'undefined') {
+        const icon = new L.Icon({
+          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41]
+        });
+        setUserIcon(icon);
+      }
+    }, []);
     
     useEffect(() => {
-      if (userLocation) {
+      if (userLocation && map) {
         map.flyTo(userLocation, 13, {
           animate: true,
           duration: 1.5
@@ -597,17 +619,10 @@ export default function MapPage() {
       }
     }, [map, userLocation]);
     
-    return userLocation ? (
+    return userLocation && userIcon ? (
       <Marker 
         position={userLocation}
-        icon={new L.Icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-          shadowSize: [41, 41]
-        })}
+        icon={userIcon}
       >
         <Popup>
           <div className="text-sm font-medium">Your Current Location</div>
@@ -616,8 +631,58 @@ export default function MapPage() {
     ) : null;
   };
 
+  // Issue marker component that handles client-side icon creation
+  const IssueMarkerComponent = ({ issue }: { issue: IssueMarker }) => {
+    const [issueIcon, setIssueIcon] = useState<any>(null);
+    
+    // Create icon only on client side
+    useEffect(() => {
+      if (typeof window !== 'undefined') {
+        const icon = new L.Icon({
+          iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${
+            issue.category === 'water-pollution' ? 'blue' :
+            issue.category === 'air-pollution' ? 'red' :
+            issue.category === 'waste-management' ? 'gold' :
+            issue.category === 'habitat-destruction' ? 'violet' :
+            issue.category === 'soil-contamination' ? 'orange' : 'green'
+          }.png`,
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41]
+        });
+        setIssueIcon(icon);
+      }
+    }, [issue.category]);
+    
+    return issueIcon ? (
+      <Marker 
+        key={issue.id} 
+        position={[issue.latitude, issue.longitude]}
+        icon={issueIcon}
+        eventHandlers={{
+          click: () => {
+            setSelectedIssue(issue);
+            setActiveTab('details');
+          }
+        }}
+      >
+        <Popup>
+          <div className="text-sm">
+            <p className="font-semibold">{issue.title}</p>
+            <p className="text-xs">{formatCategoryName(issue.category)}</p>
+          </div>
+        </Popup>
+      </Marker>
+    ) : null;
+  };
+
   return (
     <div className="relative w-full h-[calc(100vh-64px)]">
+      {/* Import Leaflet CSS only on client side */}
+      <LeafletCSS />
+      
       {/* Map container */}
       <div className="absolute inset-0">
         {mapLoaded && (
@@ -635,37 +700,7 @@ export default function MapPage() {
             
             {/* Issue markers */}
             {filteredIssues.map(issue => (
-              <Marker 
-                key={issue.id} 
-                position={[issue.latitude, issue.longitude]}
-                icon={new L.Icon({
-                  iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${
-                    issue.category === 'water-pollution' ? 'blue' :
-                    issue.category === 'air-pollution' ? 'red' :
-                    issue.category === 'waste-management' ? 'gold' :
-                    issue.category === 'habitat-destruction' ? 'violet' :
-                    issue.category === 'soil-contamination' ? 'orange' : 'green'
-                  }.png`,
-                  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-                  iconSize: [25, 41],
-                  iconAnchor: [12, 41],
-                  popupAnchor: [1, -34],
-                  shadowSize: [41, 41]
-                })}
-                eventHandlers={{
-                  click: () => {
-                    setSelectedIssue(issue);
-                    setActiveTab('details');
-                  }
-                }}
-              >
-                <Popup>
-                  <div className="text-sm">
-                    <p className="font-semibold">{issue.title}</p>
-                    <p className="text-xs">{formatCategoryName(issue.category)}</p>
-                  </div>
-                </Popup>
-              </Marker>
+              <IssueMarkerComponent key={issue.id} issue={issue} />
             ))}
           </MapContainer>
         )}
