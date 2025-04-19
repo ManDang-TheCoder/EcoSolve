@@ -16,7 +16,9 @@ import {
   Info,
   MessageCircle,
   Users,
-  Send
+  Send,
+  MapPin,
+  Crosshair
 } from 'lucide-react';
 
 // UI Components
@@ -63,19 +65,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 const MapContainer = dynamic(
   () => import('react-leaflet').then((mod) => mod.MapContainer),
   { ssr: false }
-);
+) as any; // Type as any to avoid TypeScript errors with props
+
 const TileLayer = dynamic(
   () => import('react-leaflet').then((mod) => mod.TileLayer),
   { ssr: false }
-);
+) as any;
+
 const Marker = dynamic(
   () => import('react-leaflet').then((mod) => mod.Marker),
   { ssr: false }
-);
+) as any;
+
 const Popup = dynamic(
   () => import('react-leaflet').then((mod) => mod.Popup),
   { ssr: false }
-);
+) as any;
+
+// For managing map state and view
+const useMap = dynamic(
+  () => import('react-leaflet').then((mod) => mod.useMap),
+  { ssr: false }
+) as any;
 
 // Add Leaflet CSS
 import 'leaflet/dist/leaflet.css';
@@ -394,22 +405,6 @@ const urgencyColors: Record<string, string> = {
   'CRITICAL': 'bg-red-100 text-red-800',
 };
 
-// Fix for Leaflet marker icons in Next.js
-useEffect(() => {
-  // Only run on client side
-  if (typeof window !== "undefined") {
-    // @ts-ignore
-    delete L.Icon.Default.prototype._getIconUrl;
-    
-    // @ts-ignore
-    L.Icon.Default.mergeOptions({
-      iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-      iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-      shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-    });
-  }
-}, []);
-
 export default function MapPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -426,6 +421,43 @@ export default function MapPage() {
   const [filteredIssues, setFilteredIssues] = useState<IssueMarker[]>(MOCK_ISSUES);
   const [newMessage, setNewMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'details' | 'chat' | 'participants'>('details');
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [userLocationError, setUserLocationError] = useState<string | null>(null);
+  
+  // Fix for Leaflet marker icons in Next.js - MOVED INSIDE COMPONENT
+  useEffect(() => {
+    // Only run on client side
+    if (typeof window !== "undefined") {
+      // @ts-ignore
+      delete L.Icon.Default.prototype._getIconUrl;
+      
+      // @ts-ignore
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+        iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+      });
+    }
+  }, []);
+  
+  // Get user's current location
+  useEffect(() => {
+    if (typeof window !== "undefined" && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation([
+            position.coords.latitude,
+            position.coords.longitude
+          ]);
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+          setUserLocationError("Could not get your current location. Please check your browser permissions.");
+        },
+        { enableHighAccuracy: true }
+      );
+    }
+  }, []);
   
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -500,6 +532,33 @@ export default function MapPage() {
     setUrgencyFilter('all');
   };
   
+  // Handle requesting user location
+  const handleRequestLocation = () => {
+    if (typeof window !== "undefined" && 'geolocation' in navigator) {
+      // Show loading state
+      setUserLocationError(null);
+      
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation([
+            position.coords.latitude,
+            position.coords.longitude
+          ]);
+          
+          // If we have a map reference, we could center it
+          // But for React Leaflet, we'll use the center prop
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+          setUserLocationError("Could not get your current location. Please check your browser permissions.");
+        },
+        { enableHighAccuracy: true }
+      );
+    } else {
+      setUserLocationError("Geolocation is not supported by your browser.");
+    }
+  };
+  
   // Handle sending a new message
   const handleSendMessage = () => {
     if (!selectedIssue || !newMessage.trim()) return;
@@ -523,6 +582,39 @@ export default function MapPage() {
     // Force a re-render
     setSelectedIssue({...selectedIssue});
   };
+  
+  // User location marker component that updates the map view
+  const LocationMarker = () => {
+    // This will only be called on the client side due to dynamic import
+    const map = useMap();
+    
+    useEffect(() => {
+      if (userLocation) {
+        map.flyTo(userLocation, 13, {
+          animate: true,
+          duration: 1.5
+        });
+      }
+    }, [map, userLocation]);
+    
+    return userLocation ? (
+      <Marker 
+        position={userLocation}
+        icon={new L.Icon({
+          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41]
+        })}
+      >
+        <Popup>
+          <div className="text-sm font-medium">Your Current Location</div>
+        </Popup>
+      </Marker>
+    ) : null;
+  };
 
   return (
     <div className="relative w-full h-[calc(100vh-64px)]">
@@ -530,8 +622,8 @@ export default function MapPage() {
       <div className="absolute inset-0">
         {mapLoaded && (
           <MapContainer
-            center={[37.7749, -122.4194]} // San Francisco
-            zoom={9}
+            center={userLocation || [37.7749, -122.4194]} // Center on user location if available, else San Francisco
+            zoom={userLocation ? 13 : 9}
             style={{ height: "100%", width: "100%" }}
           >
             <TileLayer
@@ -539,10 +631,27 @@ export default function MapPage() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             
+            <LocationMarker />
+            
+            {/* Issue markers */}
             {filteredIssues.map(issue => (
               <Marker 
                 key={issue.id} 
                 position={[issue.latitude, issue.longitude]}
+                icon={new L.Icon({
+                  iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${
+                    issue.category === 'water-pollution' ? 'blue' :
+                    issue.category === 'air-pollution' ? 'red' :
+                    issue.category === 'waste-management' ? 'gold' :
+                    issue.category === 'habitat-destruction' ? 'violet' :
+                    issue.category === 'soil-contamination' ? 'orange' : 'green'
+                  }.png`,
+                  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                  iconSize: [25, 41],
+                  iconAnchor: [12, 41],
+                  popupAnchor: [1, -34],
+                  shadowSize: [41, 41]
+                })}
                 eventHandlers={{
                   click: () => {
                     setSelectedIssue(issue);
@@ -561,6 +670,18 @@ export default function MapPage() {
           </MapContainer>
         )}
       </div>
+      
+      {/* Location error message */}
+      {userLocationError && (
+        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-[1000] bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-md shadow-md max-w-md">
+          <p className="flex items-center text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            {userLocationError}
+          </p>
+        </div>
+      )}
       
       {/* Loading overlay */}
       {!mapLoaded && (
@@ -795,14 +916,26 @@ export default function MapPage() {
           </CardFooter>
         </Card>
         
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-white shadow"
-          onClick={() => router.push('/report-issue')}
-        >
-          Report New Issue
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-white shadow"
+            onClick={() => router.push('/report-issue')}
+          >
+            Report New Issue
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-white shadow flex items-center"
+            onClick={handleRequestLocation}
+          >
+            <Crosshair className="h-4 w-4 mr-2" />
+            Find My Location
+          </Button>
+        </div>
       </div>
       
       {/* Issue details panel with tabs */}
