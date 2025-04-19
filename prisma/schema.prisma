@@ -1,0 +1,378 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String?   @unique
+  emailVerified  DateTime?
+  image          String?
+  hashedPassword String?
+  userRole       UserRole  @default(USER)
+  bio            String?   @db.Text
+  expertise      String?   @db.Text
+  location       String?
+  joinedAt       DateTime  @default(now())
+  skills         String[]
+  interests      String[]
+  socialLinks    Json?     // Store social media links
+  verified       Boolean   @default(false)
+  impactPoints   Int       @default(0)
+  
+  accounts       Account[]
+  sessions       Session[]
+  reports        EnvironmentalReport[]
+  serviceRequests ServiceRequest[]
+  comments       Comment[]
+  groups         UsersOnGroups[]
+  createdGroups  Group[]          @relation("GroupCreator")
+  expertiseCategories ExpertCategory[]
+  answers         ExpertAnswer[]
+  events          Event[]         @relation("EventOrganizer")
+  eventParticipants EventParticipant[]
+  newsArticles    NewsArticle[]   @relation("NewsAuthor")
+  savedReports    SavedReport[]
+  donations       Donation[]
+  notifications   Notification[]
+}
+
+// NextAuth models
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Custom Models
+enum UserRole {
+  USER
+  EXPERT
+  VOLUNTEER
+  ADMIN
+}
+
+model ExpertCategory {
+  id           String    @id @default(cuid())
+  name         String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  
+  @@unique([userId, name])
+}
+
+model EnvironmentalReport {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @db.Text
+  location    String?
+  latitude    Float?
+  longitude   Float?
+  status      ReportStatus @default(PENDING)
+  images      String[]
+  urgency     UrgencyLevel @default(MEDIUM)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  category    String?
+  impactArea  String?
+  potentialSolutions String? @db.Text
+  views       Int       @default(0)
+  likes       Int       @default(0)
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+  expertAnswers ExpertAnswer[]
+  savedBy     SavedReport[]
+  groupAssignments GroupAssignment[]
+  relatedEvents Event[] @relation("RelatedReports")
+}
+
+enum ReportStatus {
+  PENDING
+  VERIFIED
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+}
+
+enum UrgencyLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model ExpertAnswer {
+  id          String    @id @default(cuid())
+  content     String    @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  likes       Int       @default(0)
+  
+  reportId    String
+  report      EnvironmentalReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  expertId    String
+  expert      User      @relation(fields: [expertId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id          String    @id @default(cuid())
+  content     String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  reportId    String?
+  report      EnvironmentalReport? @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  groupId     String?
+  group       Group?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  newsArticleId String?
+  newsArticle   NewsArticle? @relation(fields: [newsArticleId], references: [id], onDelete: Cascade)
+}
+
+model Group {
+  id          String    @id @default(cuid())
+  name        String
+  description String    @db.Text
+  location    String?
+  imageUrl    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  category    String?
+  isPublic    Boolean   @default(true)
+  memberCount Int       @default(0)
+  
+  creatorId   String
+  creator     User      @relation("GroupCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  
+  members     UsersOnGroups[]
+  comments    Comment[]
+  serviceRequests ServiceRequest[]
+  assignedReports GroupAssignment[]
+  events      Event[]
+}
+
+model GroupAssignment {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  
+  reportId    String
+  report      EnvironmentalReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  groupId     String
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  status      AssignmentStatus @default(ASSIGNED)
+  
+  @@unique([reportId, groupId])
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+model UsersOnGroups {
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  groupId     String
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  role        GroupRole @default(MEMBER)
+  joinedAt    DateTime @default(now())
+  
+  @@id([userId, groupId])
+}
+
+enum GroupRole {
+  MEMBER
+  MODERATOR
+  ADMIN
+}
+
+model ServiceRequest {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @db.Text
+  location    String?
+  latitude    Float?
+  longitude   Float?
+  status      RequestStatus @default(OPEN)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  groupId     String?
+  group       Group?    @relation(fields: [groupId], references: [id])
+}
+
+enum RequestStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model NewsArticle {
+  id          String    @id @default(cuid())
+  title       String
+  content     String    @db.Text
+  summary     String?   @db.Text
+  imageUrl    String?
+  source      String?
+  publishedAt DateTime  @default(now())
+  featured    Boolean   @default(false)
+  tags        String[]
+  views       Int       @default(0)
+  likes       Int       @default(0)
+  authorId    String
+  author      User      @relation("NewsAuthor", fields: [authorId], references: [id])
+  comments    Comment[]
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @db.Text
+  location    String
+  latitude    Float?
+  longitude   Float?
+  startDate   DateTime
+  endDate     DateTime
+  imageUrl    String?
+  isVirtual   Boolean   @default(false)
+  meetingUrl  String?
+  maxParticipants Int?
+  createdAt   DateTime  @default(now())
+  
+  organizerId String
+  organizer   User      @relation("EventOrganizer", fields: [organizerId], references: [id])
+  
+  participants EventParticipant[]
+  
+  groupId     String?
+  group       Group?    @relation(fields: [groupId], references: [id])
+  
+  relatedReports EnvironmentalReport[] @relation("RelatedReports")
+}
+
+model EventParticipant {
+  id        String    @id @default(cuid())
+  eventId   String
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    ParticipantStatus @default(REGISTERED)
+  registeredAt DateTime @default(now())
+  
+  @@unique([eventId, userId])
+}
+
+enum ParticipantStatus {
+  REGISTERED
+  CONFIRMED
+  ATTENDED
+  CANCELLED
+}
+
+model SavedReport {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reportId  String
+  report    EnvironmentalReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  savedAt   DateTime  @default(now())
+  
+  @@unique([userId, reportId])
+}
+
+model Donation {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  amount        Float
+  currency      String    @default("USD")
+  status        PaymentStatus @default(PENDING)
+  transactionId String?
+  createdAt     DateTime  @default(now())
+  projectName   String?
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message     String
+  type        NotificationType
+  read        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  link        String?
+}
+
+enum NotificationType {
+  REPORT_COMMENT
+  GROUP_INVITATION
+  EVENT_REMINDER
+  EXPERT_ANSWER
+  REPORT_STATUS
+  GROUP_UPDATE
+  SYSTEM
+} 
