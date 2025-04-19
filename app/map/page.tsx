@@ -2,8 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import dynamic from 'next/dynamic';
+import L from 'leaflet';
 import { 
   Layers, 
   Filter, 
@@ -13,11 +13,16 @@ import {
   Search,
   Loader2,
   X,
-  Info
+  Info,
+  MessageCircle,
+  Users,
+  Send
 } from 'lucide-react';
 
+// UI Components
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Sheet,
   SheetContent,
@@ -51,9 +56,29 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-// Get Mapbox token from env
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+// Dynamic import for Leaflet components to avoid SSR issues
+const MapContainer = dynamic(
+  () => import('react-leaflet').then((mod) => mod.MapContainer),
+  { ssr: false }
+);
+const TileLayer = dynamic(
+  () => import('react-leaflet').then((mod) => mod.TileLayer),
+  { ssr: false }
+);
+const Marker = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Marker),
+  { ssr: false }
+);
+const Popup = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Popup),
+  { ssr: false }
+);
+
+// Add Leaflet CSS
+import 'leaflet/dist/leaflet.css';
 
 // Types for environmental issues
 interface IssueMarker {
@@ -69,7 +94,23 @@ interface IssueMarker {
   createdAt: string;
   reportedBy: {
     name: string;
+    id: string;
+    image?: string;
   };
+  participants: {
+    id: string;
+    name: string;
+    role: string;
+    image?: string;
+  }[];
+  messages: {
+    id: string;
+    userId: string;
+    userName: string;
+    userImage?: string;
+    text: string;
+    timestamp: string;
+  }[];
 }
 
 // Mock data for demonstration
@@ -86,8 +127,48 @@ const MOCK_ISSUES: IssueMarker[] = [
     location: 'San Francisco, CA',
     createdAt: '2023-07-15T10:30:00Z',
     reportedBy: {
-      name: 'John Doe'
-    }
+      id: 'user1',
+      name: 'John Doe',
+      image: '/placeholder-user.jpg'
+    },
+    participants: [
+      {
+        id: 'user1',
+        name: 'John Doe',
+        role: 'Reporter',
+        image: '/placeholder-user.jpg'
+      },
+      {
+        id: 'user2',
+        name: 'Alice Smith',
+        role: 'Environmental Scientist',
+        image: '/placeholder-user.jpg'
+      },
+      {
+        id: 'user3',
+        name: 'Robert Johnson',
+        role: 'Local Resident',
+        image: '/placeholder-user.jpg'
+      }
+    ],
+    messages: [
+      {
+        id: 'msg1',
+        userId: 'user1',
+        userName: 'John Doe',
+        userImage: '/placeholder-user.jpg',
+        text: 'I noticed the water has a strange color and there are dead fish floating near the shore.',
+        timestamp: '2023-07-15T10:35:00Z'
+      },
+      {
+        id: 'msg2',
+        userId: 'user2',
+        userName: 'Alice Smith',
+        userImage: '/placeholder-user.jpg',
+        text: "I'll come take samples tomorrow. Could you share more photos of the affected area?",
+        timestamp: '2023-07-15T11:20:00Z'
+      }
+    ]
   },
   {
     id: '2',
@@ -101,8 +182,42 @@ const MOCK_ISSUES: IssueMarker[] = [
     location: 'San Jose, CA',
     createdAt: '2023-07-18T15:20:00Z',
     reportedBy: {
-      name: 'Emily Chen'
-    }
+      id: 'user4',
+      name: 'Emily Chen',
+      image: '/placeholder-user.jpg'
+    },
+    participants: [
+      {
+        id: 'user4',
+        name: 'Emily Chen',
+        role: 'Reporter',
+        image: '/placeholder-user.jpg'
+      },
+      {
+        id: 'user5',
+        name: 'Mark Wilson',
+        role: 'Park Ranger',
+        image: '/placeholder-user.jpg'
+      }
+    ],
+    messages: [
+      {
+        id: 'msg3',
+        userId: 'user4',
+        userName: 'Emily Chen',
+        userImage: '/placeholder-user.jpg',
+        text: 'I found large piles of construction materials dumped in the forest while hiking today.',
+        timestamp: '2023-07-18T15:25:00Z'
+      },
+      {
+        id: 'msg4',
+        userId: 'user5',
+        userName: 'Mark Wilson',
+        userImage: '/placeholder-user.jpg',
+        text: 'Thanks for reporting. I've informed enforcement. Can you share the exact coordinates?',
+        timestamp: '2023-07-18T16:10:00Z'
+      }
+    ]
   },
   {
     id: '3',
@@ -116,8 +231,34 @@ const MOCK_ISSUES: IssueMarker[] = [
     location: 'Oakland, CA',
     createdAt: '2023-07-20T09:15:00Z',
     reportedBy: {
-      name: 'Michael Brown'
-    }
+      id: 'user6',
+      name: 'Michael Brown',
+      image: '/placeholder-user.jpg'
+    },
+    participants: [
+      {
+        id: 'user6',
+        name: 'Michael Brown',
+        role: 'Reporter',
+        image: '/placeholder-user.jpg'
+      },
+      {
+        id: 'user7',
+        name: 'Dr. Sarah Lee',
+        role: 'Public Health Official',
+        image: '/placeholder-user.jpg'
+      }
+    ],
+    messages: [
+      {
+        id: 'msg5',
+        userId: 'user6',
+        userName: 'Michael Brown',
+        userImage: '/placeholder-user.jpg',
+        text: 'The emissions from the factory have been particularly bad this week. Several neighbors have reported breathing difficulties.',
+        timestamp: '2023-07-20T09:20:00Z'
+      }
+    ]
   },
   {
     id: '4',
@@ -131,8 +272,34 @@ const MOCK_ISSUES: IssueMarker[] = [
     location: 'Palo Alto, CA',
     createdAt: '2023-07-22T14:45:00Z',
     reportedBy: {
-      name: 'Sarah Johnson'
-    }
+      id: 'user8',
+      name: 'Sarah Johnson',
+      image: '/placeholder-user.jpg'
+    },
+    participants: [
+      {
+        id: 'user8',
+        name: 'Sarah Johnson',
+        role: 'Reporter',
+        image: '/placeholder-user.jpg'
+      },
+      {
+        id: 'user9',
+        name: 'James Rodriguez',
+        role: 'Wildlife Conservationist',
+        image: '/placeholder-user.jpg'
+      }
+    ],
+    messages: [
+      {
+        id: 'msg6',
+        userId: 'user8',
+        userName: 'Sarah Johnson',
+        userImage: '/placeholder-user.jpg',
+        text: 'They started clearing the area yesterday and I spotted several endangered species nests that will be destroyed.',
+        timestamp: '2023-07-22T14:50:00Z'
+      }
+    ]
   },
   {
     id: '5',
@@ -146,8 +313,48 @@ const MOCK_ISSUES: IssueMarker[] = [
     location: 'South San Francisco, CA',
     createdAt: '2023-07-25T11:10:00Z',
     reportedBy: {
-      name: 'David Wilson'
-    }
+      id: 'user10',
+      name: 'David Wilson',
+      image: '/placeholder-user.jpg'
+    },
+    participants: [
+      {
+        id: 'user10',
+        name: 'David Wilson',
+        role: 'Reporter',
+        image: '/placeholder-user.jpg'
+      },
+      {
+        id: 'user11',
+        name: 'Lisa Chen',
+        role: 'Environmental Engineer',
+        image: '/placeholder-user.jpg'
+      },
+      {
+        id: 'user12',
+        name: 'Carlos Gomez',
+        role: 'Community Garden Manager',
+        image: '/placeholder-user.jpg'
+      }
+    ],
+    messages: [
+      {
+        id: 'msg7',
+        userId: 'user10',
+        userName: 'David Wilson',
+        userImage: '/placeholder-user.jpg',
+        text: 'I had our soil tested and the results show concerning levels of lead. We need to stop using this garden immediately.',
+        timestamp: '2023-07-25T11:15:00Z'
+      },
+      {
+        id: 'msg8',
+        userId: 'user12',
+        userName: 'Carlos Gomez',
+        userImage: '/placeholder-user.jpg',
+        text: 'I've notified all garden members to stop harvesting. Can you share the full test results?',
+        timestamp: '2023-07-25T12:30:00Z'
+      }
+    ]
   }
 ];
 
@@ -187,22 +394,38 @@ const urgencyColors: Record<string, string> = {
   'CRITICAL': 'bg-red-100 text-red-800',
 };
 
+// Fix for Leaflet marker icons in Next.js
+useEffect(() => {
+  // Only run on client side
+  if (typeof window !== "undefined") {
+    // @ts-ignore
+    delete L.Icon.Default.prototype._getIconUrl;
+    
+    // @ts-ignore
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+      iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+    });
+  }
+}, []);
+
 export default function MapPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mapContainer = useRef<HTMLDivElement | null>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const markers = useRef<Record<string, mapboxgl.Marker>>({});
-  const popup = useRef<mapboxgl.Popup | null>(null);
   
   const [mapLoaded, setMapLoaded] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<IssueMarker | null>(null);
   const [isListOpen, setIsListOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [urgencyFilter, setUrgencyFilter] = useState<string>('all');
   const [filteredIssues, setFilteredIssues] = useState<IssueMarker[]>(MOCK_ISSUES);
+  const [newMessage, setNewMessage] = useState('');
+  const [activeTab, setActiveTab] = useState<'details' | 'chat' | 'participants'>('details');
   
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -214,146 +437,14 @@ export default function MapPage() {
     });
   };
   
-  // Initialize map
-  useEffect(() => {
-    if (!mapContainer.current || map.current) return;
-      
-    if (!mapboxgl.supported()) {
-      console.error('Mapbox GL is not supported by your browser');
-        return;
-      }
-      
-    // Create map
-    map.current = new mapboxgl.Map({
-          container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [-122.4194, 37.7749], // San Francisco
-          zoom: 9
-        });
-        
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl());
-    
-    // Add geolocate control
-    map.current.addControl(
-      new mapboxgl.GeolocateControl({
-        positionOptions: {
-          enableHighAccuracy: true
-        },
-        trackUserLocation: true
-      })
-    );
-    
-    // Create popup but don't add to map yet
-    popup.current = new mapboxgl.Popup({
-      closeButton: false,
-      closeOnClick: false
+  // Format time for chat messages
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
     });
-    
-    // Map load event
-    map.current.on('load', () => {
-          setMapLoaded(true);
-          
-      // Check URL parameters for issue selection
-      const issueId = searchParams.get('issue');
-      if (issueId) {
-        const issue = MOCK_ISSUES.find(i => i.id === issueId);
-        if (issue) {
-          setSelectedIssue(issue);
-          map.current?.flyTo({
-            center: [issue.longitude, issue.latitude],
-            zoom: 14,
-            essential: true
-          });
-        }
-      }
-    });
-    
-    // Cleanup on unmount
-    return () => {
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
-      }
-    };
-  }, [searchParams]);
-  
-  // Add markers when map is loaded
-  useEffect(() => {
-    if (!map.current || !mapLoaded) return;
-    
-    // Clear existing markers
-    Object.values(markers.current).forEach(marker => marker.remove());
-    markers.current = {};
-    
-    // Add filtered markers to map
-    filteredIssues.forEach(issue => {
-      // Create a marker element
-      const el = document.createElement('div');
-      el.className = 'marker';
-      el.style.width = '25px';
-      el.style.height = '25px';
-      el.style.borderRadius = '50%';
-      el.style.backgroundColor = categoryColors[issue.category] || categoryColors.default;
-      el.style.border = '2px solid white';
-      el.style.boxShadow = '0 0 0 2px rgba(0, 0, 0, 0.1)';
-      el.style.cursor = 'pointer';
-          
-      // Add pulse effect for high urgency issues
-      if (issue.urgency === 'HIGH' || issue.urgency === 'CRITICAL') {
-        el.style.animation = 'pulse 2s infinite';
-        const keyframes = `
-          @keyframes pulse {
-            0% {
-              box-shadow: 0 0 0 0 rgba(${issue.urgency === 'CRITICAL' ? '239, 68, 68' : '249, 115, 22'}, 0.7);
-            }
-            70% {
-              box-shadow: 0 0 0 10px rgba(${issue.urgency === 'CRITICAL' ? '239, 68, 68' : '249, 115, 22'}, 0);
-            }
-            100% {
-              box-shadow: 0 0 0 0 rgba(${issue.urgency === 'CRITICAL' ? '239, 68, 68' : '249, 115, 22'}, 0);
-            }
-          }
-        `;
-        const style = document.createElement('style');
-        style.appendChild(document.createTextNode(keyframes));
-        document.head.appendChild(style);
-      }
-      
-      // Create marker
-      const marker = new mapboxgl.Marker(el)
-        .setLngLat([issue.longitude, issue.latitude])
-        .addTo(map.current!);
-          
-      // Store marker reference
-      markers.current[issue.id] = marker;
-      
-      // Add events to marker
-      el.addEventListener('mouseenter', () => {
-        if (popup.current && map.current) {
-          popup.current
-            .setLngLat([issue.longitude, issue.latitude])
-            .setHTML(`
-              <div style="font-family: system-ui, sans-serif; padding: 4px;">
-                <div style="font-weight: 600; margin-bottom: 4px;">${issue.title}</div>
-                <div style="font-size: 12px;">${formatCategoryName(issue.category)}</div>
-              </div>
-            `)
-            .addTo(map.current);
-        }
-      });
-      
-      el.addEventListener('mouseleave', () => {
-        if (popup.current) {
-          popup.current.remove();
-        }
-      });
-      
-      el.addEventListener('click', () => {
-        setSelectedIssue(issue);
-          });
-        });
-  }, [filteredIssues, mapLoaded]);
+  };
   
   // Apply filters
   useEffect(() => {
@@ -372,7 +463,7 @@ export default function MapPage() {
     // Apply category filter
     if (categoryFilter !== 'all') {
       filtered = filtered.filter(issue => issue.category === categoryFilter);
-      }
+    }
     
     // Apply status filter
     if (statusFilter !== 'all') {
@@ -387,21 +478,19 @@ export default function MapPage() {
     setFilteredIssues(filtered);
   }, [searchTerm, categoryFilter, statusFilter, urgencyFilter]);
   
-  // Center map on selected issue
+  // Set map as loaded once component mounts
   useEffect(() => {
-    if (!map.current || !selectedIssue) return;
+    setMapLoaded(true);
     
-    map.current.flyTo({
-      center: [selectedIssue.longitude, selectedIssue.latitude],
-      zoom: 14,
-      essential: true
-    });
-    
-    // Update URL with selected issue ID
-    const url = new URL(window.location.href);
-    url.searchParams.set('issue', selectedIssue.id);
-    window.history.pushState({}, '', url.toString());
-  }, [selectedIssue]);
+    // Check URL parameters for issue selection
+    const issueId = searchParams.get('issue');
+    if (issueId) {
+      const issue = MOCK_ISSUES.find(i => i.id === issueId);
+      if (issue) {
+        setSelectedIssue(issue);
+      }
+    }
+  }, [searchParams]);
   
   // Reset filters
   const resetFilters = () => {
@@ -411,31 +500,67 @@ export default function MapPage() {
     setUrgencyFilter('all');
   };
   
-  // Fly to overview
-  const showAllIssues = () => {
-    if (!map.current) return;
+  // Handle sending a new message
+  const handleSendMessage = () => {
+    if (!selectedIssue || !newMessage.trim()) return;
     
-    setSelectedIssue(null);
+    // In a real app, you would send this to your backend
+    const now = new Date().toISOString();
+    const newMsg = {
+      id: `msg${Date.now()}`,
+      userId: 'currentUser', // This would be the current user's ID
+      userName: 'You', // This would be the current user's name
+      userImage: '/placeholder-user.jpg',
+      text: newMessage.trim(),
+      timestamp: now
+    };
     
-    // Calculate bounds that include all filtered issues
-    if (filteredIssues.length > 0) {
-      const bounds = new mapboxgl.LngLatBounds();
-      
-      filteredIssues.forEach(issue => {
-        bounds.extend([issue.longitude, issue.latitude]);
-      });
-      
-      map.current.fitBounds(bounds, {
-        padding: 50,
-        maxZoom: 13
-      });
-    }
+    // Update local state with the new message
+    // In a real app, this would happen after successful API call
+    selectedIssue.messages.push(newMsg);
+    setNewMessage('');
+    
+    // Force a re-render
+    setSelectedIssue({...selectedIssue});
   };
 
   return (
     <div className="relative w-full h-[calc(100vh-64px)]">
       {/* Map container */}
-      <div ref={mapContainer} className="absolute inset-0" />
+      <div className="absolute inset-0">
+        {mapLoaded && (
+          <MapContainer
+            center={[37.7749, -122.4194]} // San Francisco
+            zoom={9}
+            style={{ height: "100%", width: "100%" }}
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            
+            {filteredIssues.map(issue => (
+              <Marker 
+                key={issue.id} 
+                position={[issue.latitude, issue.longitude]}
+                eventHandlers={{
+                  click: () => {
+                    setSelectedIssue(issue);
+                    setActiveTab('details');
+                  }
+                }}
+              >
+                <Popup>
+                  <div className="text-sm">
+                    <p className="font-semibold">{issue.title}</p>
+                    <p className="text-xs">{formatCategoryName(issue.category)}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        )}
+      </div>
       
       {/* Loading overlay */}
       {!mapLoaded && (
@@ -444,11 +569,11 @@ export default function MapPage() {
             <Loader2 className="h-10 w-10 animate-spin text-green-600 mb-4" />
             <p className="text-lg font-medium text-green-800">Loading map...</p>
           </div>
-          </div>
-        )}
-        
+        </div>
+      )}
+
       {/* Control panel */}
-      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2">
         <Card className="shadow-lg w-[350px]">
           <CardHeader className="py-3 px-4">
             <CardTitle className="text-lg flex items-center">
@@ -461,7 +586,7 @@ export default function MapPage() {
                   <TooltipContent>
                     <p className="max-w-[220px] text-xs">
                       This map shows reported environmental issues in your community. 
-                      Click on markers to view details and track progress.
+                      Click on markers to view details and join group discussions.
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -557,15 +682,6 @@ export default function MapPage() {
             </p>
             
             <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={showAllIssues}
-                className="text-xs"
-              >
-                View All
-              </Button>
-              
               <Sheet open={isListOpen} onOpenChange={setIsListOpen}>
                 <SheetTrigger asChild>
                   <Button size="sm" className="bg-green-600 hover:bg-green-700 text-xs">
@@ -576,7 +692,7 @@ export default function MapPage() {
                   <SheetHeader className="p-4 border-b">
                     <SheetTitle>Environmental Issues</SheetTitle>
                     <SheetDescription>
-                      List of reported environmental issues
+                      List of reported environmental issues with group discussions
                     </SheetDescription>
                   </SheetHeader>
                   
@@ -610,7 +726,7 @@ export default function MapPage() {
                                 {issue.description}
                               </p>
                               <div className="flex flex-wrap gap-2 mb-2">
-                                <Badge className={`bg-${categoryColors[issue.category].substring(1)} text-white`}>
+                                <Badge className={`text-white`} style={{backgroundColor: categoryColors[issue.category]}}>
                                   {formatCategoryName(issue.category)}
                                 </Badge>
                                 <Badge className={statusColors[issue.status]}>
@@ -619,14 +735,29 @@ export default function MapPage() {
                                 <Badge className={urgencyColors[issue.urgency]}>
                                   {issue.urgency.charAt(0) + issue.urgency.slice(1).toLowerCase()} Urgency
                                 </Badge>
-          </div>
-                              <p className="text-xs text-gray-500 flex items-center mt-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                                {issue.location}
-                              </p>
+                              </div>
+                              <div className="flex justify-between items-center mt-2">
+                                <p className="text-xs text-gray-500 flex items-center">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                  {issue.location}
+                                </p>
+                                <div className="flex -space-x-2">
+                                  {issue.participants.slice(0, 3).map((participant, i) => (
+                                    <Avatar key={i} className="h-6 w-6 border-2 border-white">
+                                      <AvatarImage src={participant.image} alt={participant.name} />
+                                      <AvatarFallback>{participant.name.charAt(0)}</AvatarFallback>
+                                    </Avatar>
+                                  ))}
+                                  {issue.participants.length > 3 && (
+                                    <div className="h-6 w-6 rounded-full bg-gray-200 text-xs flex items-center justify-center border-2 border-white">
+                                      +{issue.participants.length - 3}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </CardContent>
                             <CardFooter className="py-2 px-4 flex justify-between">
                               <Button 
@@ -634,6 +765,7 @@ export default function MapPage() {
                                 variant="outline"
                                 onClick={() => {
                                   setSelectedIssue(issue);
+                                  setActiveTab('details');
                                   setIsListOpen(false);
                                 }}
                               >
@@ -642,9 +774,14 @@ export default function MapPage() {
                               <Button 
                                 size="sm" 
                                 className="bg-green-600 hover:bg-green-700"
-                                onClick={() => router.push(`/reports/${issue.id}`)}
+                                onClick={() => {
+                                  setSelectedIssue(issue);
+                                  setActiveTab('chat');
+                                  setIsListOpen(false);
+                                }}
                               >
-                                View Details
+                                <MessageCircle className="h-4 w-4 mr-1" />
+                                Join Discussion
                               </Button>
                             </CardFooter>
                           </Card>
@@ -668,9 +805,9 @@ export default function MapPage() {
         </Button>
       </div>
       
-      {/* Issue details panel */}
+      {/* Issue details panel with tabs */}
       {selectedIssue && (
-        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10">
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[1000]">
           <Card className="w-[90vw] max-w-[500px] shadow-lg">
             <CardHeader className="py-3 px-4 flex flex-row items-start justify-between">
               <div>
@@ -688,73 +825,161 @@ export default function MapPage() {
                 <X className="h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent className="py-2 px-4">
-              <p className="text-sm text-gray-600 mb-3">
-                {selectedIssue.description}
-              </p>
-              <div className="flex flex-wrap gap-2 mb-3">
-                <Badge className={`bg-${categoryColors[selectedIssue.category].substring(1)} text-white`}>
-                  {formatCategoryName(selectedIssue.category)}
-                </Badge>
-                <Badge className={statusColors[selectedIssue.status]}>
-                  {selectedIssue.status.charAt(0) + selectedIssue.status.slice(1).toLowerCase().replace('_', ' ')}
-                </Badge>
-                <Badge className={urgencyColors[selectedIssue.urgency]}>
-                  {selectedIssue.urgency.charAt(0) + selectedIssue.urgency.slice(1).toLowerCase()} Urgency
-                </Badge>
-              </div>
-              <p className="text-sm text-gray-500 flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                {selectedIssue.location}
-              </p>
-            </CardContent>
-            <CardFooter className="py-3 px-4 flex justify-between">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  // Find index in filtered issues
-                  const currentIndex = filteredIssues.findIndex(i => i.id === selectedIssue.id);
-                  if (currentIndex > 0) {
-                    setSelectedIssue(filteredIssues[currentIndex - 1]);
-                  }
-                }}
-                disabled={filteredIssues.findIndex(i => i.id === selectedIssue.id) <= 0}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-              </Button>
+            
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'details' | 'chat' | 'participants')}>
+              <TabsList className="grid grid-cols-3 mx-4 mb-2">
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="chat" className="flex items-center">
+                  Chat 
+                  {selectedIssue.messages.length > 0 && (
+                    <span className="ml-1 bg-green-100 text-green-800 text-xs rounded-full px-1.5 py-0.5">
+                      {selectedIssue.messages.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="participants" className="flex items-center">
+                  People
+                  <span className="ml-1 bg-gray-100 text-gray-800 text-xs rounded-full px-1.5 py-0.5">
+                    {selectedIssue.participants.length}
+                  </span>
+                </TabsTrigger>
+              </TabsList>
               
-              <Button 
-                className="bg-green-600 hover:bg-green-700"
-                onClick={() => router.push(`/reports/${selectedIssue.id}`)}
-              >
-                View Full Details
-              </Button>
+              <TabsContent value="details" className="m-0">
+                <CardContent className="py-2 px-4">
+                  <p className="text-sm text-gray-600 mb-3">
+                    {selectedIssue.description}
+                  </p>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <Badge className="text-white" style={{backgroundColor: categoryColors[selectedIssue.category]}}>
+                      {formatCategoryName(selectedIssue.category)}
+                    </Badge>
+                    <Badge className={statusColors[selectedIssue.status]}>
+                      {selectedIssue.status.charAt(0) + selectedIssue.status.slice(1).toLowerCase().replace('_', ' ')}
+                    </Badge>
+                    <Badge className={urgencyColors[selectedIssue.urgency]}>
+                      {selectedIssue.urgency.charAt(0) + selectedIssue.urgency.slice(1).toLowerCase()} Urgency
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-500 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    {selectedIssue.location}
+                  </p>
+                </CardContent>
+                
+                <CardFooter className="py-3 px-4 flex justify-between">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => router.push(`/reports/${selectedIssue.id}`)}
+                  >
+                    View Full Details
+                  </Button>
+                  
+                  <Button 
+                    className="bg-green-600 hover:bg-green-700"
+                    onClick={() => setActiveTab('chat')}
+                  >
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    Join Discussion
+                  </Button>
+                </CardFooter>
+              </TabsContent>
               
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  // Find index in filtered issues
-                  const currentIndex = filteredIssues.findIndex(i => i.id === selectedIssue.id);
-                  if (currentIndex < filteredIssues.length - 1) {
-                    setSelectedIssue(filteredIssues[currentIndex + 1]);
-                  }
-                }}
-                disabled={filteredIssues.findIndex(i => i.id === selectedIssue.id) >= filteredIssues.length - 1}
-              >
-                Next <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            </CardFooter>
+              <TabsContent value="chat" className="m-0">
+                <CardContent className="py-2 px-4">
+                  <ScrollArea className="h-[200px] pr-4">
+                    {selectedIssue.messages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                        <MessageCircle className="h-8 w-8 text-gray-300 mb-2" />
+                        <p className="text-gray-500">No messages yet</p>
+                        <p className="text-xs text-gray-400">Be the first to start the discussion</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {selectedIssue.messages.map((message) => (
+                          <div key={message.id} className="flex items-start gap-2">
+                            <Avatar className="h-8 w-8 flex-shrink-0">
+                              <AvatarImage src={message.userImage} alt={message.userName} />
+                              <AvatarFallback>{message.userName.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <div className="flex items-baseline">
+                                <p className="font-medium text-sm">{message.userName}</p>
+                                <p className="text-xs text-gray-400 ml-2">{formatTime(message.timestamp)}</p>
+                              </div>
+                              <p className="text-sm text-gray-600">{message.text}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                  
+                  <div className="mt-3 flex items-end gap-2">
+                    <Textarea 
+                      placeholder="Type your message..." 
+                      className="min-h-[60px] resize-none"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage();
+                        }
+                      }}
+                    />
+                    <Button 
+                      className="bg-green-600 hover:bg-green-700 flex-shrink-0"
+                      onClick={handleSendMessage}
+                      disabled={!newMessage.trim()}
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </TabsContent>
+              
+              <TabsContent value="participants" className="m-0">
+                <CardContent className="py-2 px-4">
+                  <ScrollArea className="h-[200px] pr-4">
+                    <div className="space-y-3">
+                      {selectedIssue.participants.map((participant) => (
+                        <div key={participant.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md">
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage src={participant.image} alt={participant.name} />
+                            <AvatarFallback>{participant.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium text-sm">{participant.name}</p>
+                            <p className="text-xs text-gray-500">{participant.role}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+                
+                <CardFooter className="py-3 px-4">
+                  <Button 
+                    className="w-full bg-green-600 hover:bg-green-700"
+                    onClick={() => setActiveTab('chat')}
+                  >
+                    <Users className="h-4 w-4 mr-2" />
+                    Join the Group
+                  </Button>
+                </CardFooter>
+              </TabsContent>
+            </Tabs>
           </Card>
         </div>
       )}
       
       {/* Legend */}
-      <div className="absolute bottom-6 right-6 z-10">
+      <div className="absolute bottom-6 right-6 z-[1000]">
         <Card className="shadow-lg">
           <CardHeader className="py-2 px-3">
             <CardTitle className="text-sm">Map Legend</CardTitle>
@@ -769,24 +994,19 @@ export default function MapPage() {
                 <div className="w-4 h-4 rounded-full bg-red-500 mr-2"></div>
                 <span className="text-xs">Air Pollution</span>
               </div>
-          <div className="flex items-center">
+              <div className="flex items-center">
                 <div className="w-4 h-4 rounded-full bg-amber-500 mr-2"></div>
                 <span className="text-xs">Waste Management</span>
-          </div>
-          <div className="flex items-center">
+              </div>
+              <div className="flex items-center">
                 <div className="w-4 h-4 rounded-full bg-violet-500 mr-2"></div>
                 <span className="text-xs">Habitat Destruction</span>
-          </div>
-          <div className="flex items-center">
+              </div>
+              <div className="flex items-center">
                 <div className="w-4 h-4 rounded-full bg-amber-800 mr-2"></div>
                 <span className="text-xs">Soil Contamination</span>
               </div>
-              <Separator className="my-1" />
-              <div className="flex items-center">
-                <div className="w-4 h-4 rounded-full bg-blue-500 animate-pulse mr-2"></div>
-                <span className="text-xs">High/Critical Urgency</span>
-          </div>
-        </div>
+            </div>
           </CardContent>
         </Card>
       </div>
