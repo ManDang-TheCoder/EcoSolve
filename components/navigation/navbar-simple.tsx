@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Menu, 
   X, 
@@ -68,11 +69,64 @@ const notifications = [
   },
 ];
 
+// Navbar animations
+const navVariants = {
+  hidden: { opacity: 0, y: -10 },
+  visible: { 
+    opacity: 1, 
+    y: 0, 
+    transition: { 
+      type: 'spring', 
+      stiffness: 300, 
+      damping: 20 
+    } 
+  }
+};
+
+// Mobile menu animations
+const mobileMenuVariants = {
+  hidden: { opacity: 0, y: -10, height: 0 },
+  visible: { 
+    opacity: 1, 
+    y: 0, 
+    height: 'auto',
+    transition: { 
+      duration: 0.3, 
+      ease: [0.25, 0.1, 0.25, 1.0],
+      staggerChildren: 0.05 
+    } 
+  },
+  exit: { 
+    opacity: 0, 
+    y: -10, 
+    height: 0,
+    transition: { 
+      duration: 0.2, 
+      ease: [0.25, 0.1, 0.25, 1.0] 
+    } 
+  }
+};
+
+// Mobile menu item animation
+const menuItemVariants = {
+  hidden: { opacity: 0, y: -10 },
+  visible: { 
+    opacity: 1, 
+    y: 0,
+    transition: { 
+      type: 'spring', 
+      stiffness: 400, 
+      damping: 25
+    } 
+  }
+};
+
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [scrolled, setScrolled] = useState(false);
   
   // Use auth context
   const { user, isLoading, logout } = useAuth();
@@ -89,8 +143,32 @@ export default function Navbar() {
     router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
   };
   
+  // Handle scroll effect for navbar
+  useEffect(() => {
+    const handleScroll = () => {
+      const isScrolled = window.scrollY > 10;
+      if (isScrolled !== scrolled) {
+        setScrolled(isScrolled);
+      }
+    };
+    
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [scrolled]);
+  
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-white shadow-sm">
+    <motion.header 
+      initial="hidden"
+      animate="visible"
+      variants={navVariants}
+      className={`sticky top-0 z-50 w-full border-b ${
+        scrolled 
+          ? 'bg-white/95 backdrop-blur-md shadow-sm border-transparent' 
+          : 'bg-white shadow-sm'
+      } transition-all duration-300`}
+    >
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
@@ -381,6 +459,6 @@ export default function Navbar() {
           </div>
         </div>
       )}
-    </header>
+    </motion.header>
   );
 } 
