@@ -165,7 +165,7 @@ const MOCK_ISSUES: IssueMarker[] = [
         userId: 'user2',
         userName: 'Alice Smith',
         userImage: '/placeholder-user.jpg',
-        text: "I'll come take samples tomorrow. Could you share more photos of the affected area?",
+        text: "I\'ll come take samples tomorrow. Could you share more photos of the affected area?",
         timestamp: '2023-07-15T11:20:00Z'
       }
     ]
@@ -214,7 +214,7 @@ const MOCK_ISSUES: IssueMarker[] = [
         userId: 'user5',
         userName: 'Mark Wilson',
         userImage: '/placeholder-user.jpg',
-        text: 'Thanks for reporting. I've informed enforcement. Can you share the exact coordinates?',
+        text: 'Thanks for reporting. I\'ve informed enforcement. Can you share the exact coordinates?',
         timestamp: '2023-07-18T16:10:00Z'
       }
     ]
@@ -351,7 +351,7 @@ const MOCK_ISSUES: IssueMarker[] = [
         userId: 'user12',
         userName: 'Carlos Gomez',
         userImage: '/placeholder-user.jpg',
-        text: 'I've notified all garden members to stop harvesting. Can you share the full test results?',
+        text: 'I\'ve notified all garden members to stop harvesting. Can you share the full test results?',
         timestamp: '2023-07-25T12:30:00Z'
       }
     ]
