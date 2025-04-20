@@ -92,7 +92,10 @@ const useMap = dynamic(
 const LeafletCSS = () => {
   useEffect(() => {
     // Only import on client side
-    import('leaflet/dist/leaflet.css');
+    if (typeof window !== 'undefined') {
+      // Use require to bypass TypeScript module resolution
+      require('leaflet/dist/leaflet.css');
+    }
   }, []);
   return null;
 };
@@ -612,7 +615,9 @@ export default function MapPage() {
     
     useEffect(() => {
       if (userLocation && map) {
-        map.flyTo(userLocation, 13, {
+        // Use setView instead of flyTo which has better compatibility
+        const [lat, lng] = userLocation;
+        map.setView([lat, lng], 13, {
           animate: true,
           duration: 1.5
         });

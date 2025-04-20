@@ -1,34 +1,15 @@
-import "./globals.css";
-import { Inter } from "next/font/google";
-import { Providers } from "./providers";
-import LayoutWrapper from "@/components/layout-wrapper";
+import { Metadata } from 'next';
+import { ClientLayout } from './client-layout';
 
-// Optimize font loading
-const inter = Inter({ 
-  subsets: ["latin"],
-  display: 'swap', // Add font-display swap for faster text rendering
-});
-
-export const metadata = {
+export const metadata: Metadata = {
   title: "Local Eco Solve",
-  description: "A platform for reporting and tracking local environmental issues",
+  description: "A platform for reporting and tracking local environmental issues and creating sustainable solutions",
+  keywords: ["environment", "sustainability", "community", "local", "eco", "solve"],
+  authors: [{ name: "Local Eco Solve Team" }],
+  creator: "Local Eco Solve",
+  publisher: "Local Eco Solve",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <head />
-      <body className={inter.className} suppressHydrationWarning>
-        <Providers>
-          <LayoutWrapper>
-            {children}
-          </LayoutWrapper>
-        </Providers>
-      </body>
-    </html>
-  );
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return <ClientLayout>{children}</ClientLayout>;
 }

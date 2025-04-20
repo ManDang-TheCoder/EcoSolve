@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { z } from "zod";
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getServerSession } from '@/lib/auth';
+import { z } from 'zod';
 import { Session } from "next-auth";
 
 // Custom session type with user ID
@@ -26,7 +26,7 @@ const ExpertSchema = z.object({
 export async function POST(request: Request) {
   try {
     // Check authentication
-    const session = await auth() as CustomSession;
+    const session = await getServerSession() as CustomSession;
     
     if (!session?.user) {
       return NextResponse.json(
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     const validatedData = ExpertSchema.parse(body);
     
     // Check if the user already has an expert profile
-    const existingExpert = await db.expert.findUnique({
+    const existingExpert = await prisma.expert.findUnique({
       where: { userId: session.user.id },
     });
     
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     }
     
     // Create the expert profile
-    const expert = await db.expert.create({
+    const expert = await prisma.expert.create({
       data: {
         title: validatedData.title,
         specialties: validatedData.specialties, // Store JSON string directly

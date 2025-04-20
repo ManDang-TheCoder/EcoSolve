@@ -1,9 +1,9 @@
 'use client';
 
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, Variants, TargetAndTransition, VariantLabels } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { fadeIn, slideUp, staggerChildren } from '@/utils/animations';
+import { fadeIn, slideUp, staggerContainer } from '@/utils/animations';
 
 interface AnimatedSectionProps {
   children: React.ReactNode;
@@ -29,31 +29,35 @@ export const AnimatedSection = ({
   as: Component = 'section',
 }: AnimatedSectionProps) => {
   // Animation variants
-  let variants = fadeIn; // Default
+  let variants: Variants;
   
-  if (animation === 'slide') {
+  // Create variants based on animation type
+  if (animation === 'fade') {
+    variants = fadeIn('up', delay);
+  } else if (animation === 'slide') {
     variants = slideUp;
-  } else if (animation === 'none') {
-    variants = {};
+  } else {
+    variants = {}; // Empty variants for 'none'
   }
   
   // Custom transition with delay
   const transition = {
-    ...variants.visible?.transition,
-    delay,
     duration,
+    delay,
   };
   
-  // If staggering is enabled, use the staggerChildren variant
+  // If staggering is enabled, use the staggerContainer variant
   if (stagger) {
+    // Create stagger container
+    const staggerVariants = staggerContainer(staggerAmount, delay);
+    
     return (
       <motion.div
         id={id}
         initial="hidden"
         animate="visible"
         exit="exit"
-        variants={staggerChildren}
-        transition={{ staggerChildren: staggerAmount, delayChildren: delay }}
+        variants={staggerVariants}
         className={className}
       >
         {children}
@@ -61,13 +65,18 @@ export const AnimatedSection = ({
     );
   }
   
+  // Define animation states based on the animation prop
+  const initialAnimation: VariantLabels | boolean = animation !== 'none' ? "hidden" : false;
+  const animateState: TargetAndTransition | VariantLabels | boolean = animation !== 'none' ? "visible" : true; 
+  const exitAnimation: VariantLabels | TargetAndTransition | undefined = animation !== 'none' ? "exit" : undefined;
+  
   // Regular animation for the section
   return (
     <motion.section
       id={id}
-      initial={animation !== 'none' ? "hidden" : false}
-      animate={animation !== 'none' ? "visible" : false}
-      exit={animation !== 'none' ? "exit" : false}
+      initial={initialAnimation}
+      animate={animateState}
+      exit={exitAnimation}
       variants={variants}
       transition={transition}
       className={cn('', className)}
@@ -90,23 +99,30 @@ export const AnimatedItem = ({
   animation?: 'fade' | 'slide';
 }) => {
   // Animation variants
-  let variants = fadeIn; // Default
+  let variants: Variants;
   
-  if (animation === 'slide') {
+  // Create variants based on animation type
+  if (animation === 'fade') {
+    variants = fadeIn('up', delay);
+  } else {
     variants = slideUp;
   }
   
   // Custom transition with delay
   const transition = {
-    ...variants.visible?.transition,
     delay,
   };
+
+  // Define animation properties with correct types
+  const initialAnimation: VariantLabels = "hidden";
+  const animateState: VariantLabels = "visible";
+  const exitAnimation: VariantLabels = "exit";
   
   return (
     <motion.div
-      initial="hidden"
-      animate="visible"
-      exit="exit"
+      initial={initialAnimation}
+      animate={animateState}
+      exit={exitAnimation}
       variants={variants}
       transition={transition}
       className={className}

@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from '@/lib/auth';
 import { generateUploadURL } from "@/lib/upload";
 import { z } from "zod";
 
@@ -12,7 +12,7 @@ const UploadRequestSchema = z.object({
 export async function POST(request: Request) {
   try {
     // Check authentication
-    const session = await auth();
+    const session = await getServerSession();
     if (!session?.user) {
       return NextResponse.json(
         { error: "Unauthorized" },

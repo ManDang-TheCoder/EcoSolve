@@ -44,6 +44,9 @@ export const staggerContainer = (
   };
 };
 
+// Export alias for staggerChildren to fix the import error
+export const staggerChildren = staggerContainer;
+
 /**
  * Scale animation variants for Framer Motion
  */

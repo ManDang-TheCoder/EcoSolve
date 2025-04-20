@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: false,
+  reactStrictMode: true,
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -18,9 +18,7 @@ const nextConfig = {
   },
   poweredByHeader: false,
   compress: true,
-  experimental: {
-    ppr: false
-  }
+  transpilePackages: ['lodash-es', 'lucide-react']
 };
 
-export default nextConfig;
+module.exports = nextConfig; 

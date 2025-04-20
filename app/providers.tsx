@@ -2,12 +2,17 @@
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { ThemeProvider } from 'next-themes';
-import { SessionProvider } from 'next-auth/react';
+// Comment out SessionProvider until we're ready to use it
+// import { SessionProvider } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import dynamic from 'next/dynamic';
 
 // Check if we're in the browser environment to avoid SSR issues
 const isBrowser = typeof window !== 'undefined';
+
+// Safe useLayoutEffect implementation that doesn't run during SSR
+const useIsomorphicLayoutEffect = isBrowser ? React.useLayoutEffect : React.useEffect;
 
 // Enhanced browser detection
 const getBrowserInfo = () => {
@@ -50,6 +55,313 @@ const getBrowserInfo = () => {
   }
   
   return { name: browserName, version, compatible };
+};
+
+// Client-side only components
+const BrowserCompatibilityWarning = dynamic(() => 
+  Promise.resolve(() => {
+    const [browserInfo, setBrowserInfo] = useState({ name: 'SSR', version: '0', compatible: true });
+    
+    useEffect(() => {
+      setBrowserInfo(getBrowserInfo());
+    }, []);
+    
+    if (browserInfo.compatible) return null;
+    
+    return (
+      <div className="fixed bottom-0 w-full bg-yellow-100 text-yellow-800 p-4 text-center z-50">
+        <p>
+          You're using {browserInfo.name} {browserInfo.version} which may have limited compatibility.
+          For the best experience, please use Chrome 70+, Firefox 65+, Safari 12+, or Edge 79+.
+        </p>
+      </div>
+    );
+  }),
+  { ssr: false }
+);
+
+// Define user type
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: 'USER' | 'EXPERT' | 'VOLUNTEER' | 'ADMIN';
+  image?: string;
+  location?: string;
+};
+
+// Auth context type
+type AuthContextType = {
+  user: User | null;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  register: (userData: any) => Promise<boolean>;
+  updateProfile: (profileData: Partial<User>) => Promise<boolean>;
+};
+
+// Create the auth context
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Mock user for demo purposes
+const MOCK_USER: User = {
+  id: 'user-1',
+  name: 'Alex Johnson',
+  email: 'alex@example.com',
+  role: 'USER',
+  image: '/placeholder-user.jpg',
+  location: 'Portland, OR',
+};
+
+// AuthProvider component
+function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+
+  // Helper function to make authenticated API requests
+  const authFetch = async (url: string, options: RequestInit = {}) => {
+    if (!isBrowser) return new Response(JSON.stringify({ error: 'Server-side API call not supported' }));
+    
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('No token found');
+    
+    const headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`
+    };
+    
+    return fetch(url, { ...options, headers });
+  };
+
+  // Simulate checking for stored auth on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        // Skip if not in browser
+        if (!isBrowser) {
+          setIsLoading(false);
+          return;
+        }
+        
+        // Check if we have a token in localStorage
+        const token = localStorage.getItem('token');
+        const storedUser = localStorage.getItem('user');
+        
+        if (token && storedUser) {
+          // Set the user from localStorage initially
+          setUser(JSON.parse(storedUser));
+          
+          // Then verify and refresh user data from API
+          try {
+            const response = await authFetch('/api/auth/user');
+            
+            if (response.ok) {
+              const data = await response.json();
+              setUser(data.user);
+              // Update stored user data
+              localStorage.setItem('user', JSON.stringify(data.user));
+            } else {
+              // If API returns error, token might be expired - force logout
+              console.warn('Token validation failed');
+              localStorage.removeItem('token');
+              localStorage.removeItem('user');
+              setUser(null);
+            }
+          } catch (apiError) {
+            console.error('API error during auth check:', apiError);
+            // If API error, keep using stored user data but log warning
+          }
+        }
+      } catch (error) {
+        console.error('Auth initialization error:', error);
+        if (isBrowser) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+        }
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    checkAuth();
+  }, []);
+
+  // Login function
+  const login = async (email: string, password: string): Promise<boolean> => {
+    if (!isBrowser) return false;
+    
+    setIsLoading(true);
+    
+    try {
+      // In development or demo mode, allow a mock login
+      if (process.env.NODE_ENV === 'development' && 
+         (email === 'test@example.com' && password === 'password123' || email === MOCK_USER.email)) {
+        const loggedInUser = MOCK_USER;
+        
+        // Store the user in local storage
+        localStorage.setItem('user', JSON.stringify(loggedInUser));
+        localStorage.setItem('token', 'mock-token-for-development-only');
+        setUser(loggedInUser);
+        
+        toast.success('Successfully logged in with demo account!');
+        return true;
+      }
+      
+      // Real API call for authentication
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password, rememberMe: true }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        toast.error(error.message || 'Login failed');
+        return false;
+      }
+      
+      const data = await response.json();
+      
+      // Store token and user data
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      // Update state
+      setUser(data.user);
+      
+      toast.success('Successfully logged in!');
+      return true;
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('An error occurred during login.');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Logout function
+  const logout = async () => {
+    try {
+      // Call the logout API to clear the cookie
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+      });
+      
+      // Clear client-side storage
+      if (isBrowser) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
+      setUser(null);
+      toast.success('Successfully logged out!');
+      router.push('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Even if the API call fails, clear local storage and state
+      if (isBrowser) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
+      setUser(null);
+      toast.error('An error occurred during logout.');
+      router.push('/');
+    }
+  };
+
+  // Register function
+  const register = async (userData: any): Promise<boolean> => {
+    if (!isBrowser) return false;
+    
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        toast.error(error.message || 'Registration failed');
+        return false;
+      }
+      
+      toast.success('Account created successfully! Please log in.');
+      return true;
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error('An error occurred during registration.');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Provide additional helper methods
+  const updateProfile = async (profileData: Partial<User>): Promise<boolean> => {
+    if (!isBrowser) return false;
+    
+    try {
+      if (!user) return false;
+      
+      const response = await authFetch('/api/auth/user/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(profileData),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to update profile');
+        return false;
+      }
+      
+      const data = await response.json();
+      
+      // Update user state and storage
+      setUser(prev => prev ? { ...prev, ...data.user } : null);
+      localStorage.setItem('user', JSON.stringify({ ...user, ...data.user }));
+      
+      toast.success('Profile updated successfully!');
+      return true;
+    } catch (error) {
+      console.error('Profile update error:', error);
+      toast.error('An error occurred while updating your profile.');
+      return false;
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ 
+      user, 
+      isLoading, 
+      login, 
+      logout, 
+      register,
+      updateProfile
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+// Custom hook for using auth context
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
 
 // Error fallback component
@@ -95,166 +407,11 @@ class AppErrorBoundary extends React.Component<
   }
 }
 
-// Browser compatibility warning
-function BrowserCompatibilityWarning() {
-  const [browserInfo, setBrowserInfo] = useState({ name: 'SSR', version: '0', compatible: true });
-  
-  useEffect(() => {
-    setBrowserInfo(getBrowserInfo());
-  }, []);
-  
-  if (browserInfo.compatible) return null;
-  
-  return (
-    <div className="fixed bottom-0 w-full bg-yellow-100 text-yellow-800 p-4 text-center z-50">
-      <p>
-        You're using {browserInfo.name} {browserInfo.version} which may have limited compatibility.
-        For the best experience, please use Chrome 70+, Firefox 65+, Safari 12+, or Edge 79+.
-      </p>
-    </div>
-  );
-}
-
-// Define user type
-type User = {
-  id: string;
-  name: string;
-  email: string;
-  role: 'USER' | 'EXPERT' | 'VOLUNTEER' | 'ADMIN';
-  image?: string;
-  location?: string;
-};
-
-// Auth context type
-type AuthContextType = {
-  user: User | null;
-  isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
-  register: (userData: any) => Promise<boolean>;
-};
-
-// Create the auth context
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Mock user for demo purposes
-const MOCK_USER: User = {
-  id: 'user-1',
-  name: 'Alex Johnson',
-  email: 'alex@example.com',
-  role: 'USER',
-  image: '/placeholder-user.jpg',
-  location: 'Portland, OR',
-};
-
-// AuthProvider component
-function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
-
-  // Simulate checking for stored auth on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        // In a real app, you would check for a stored token and validate it
-        const storedUser = localStorage.getItem('user');
-        
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    checkAuth();
-  }, []);
-
-  // Login function
-  const login = async (email: string, password: string): Promise<boolean> => {
-    setIsLoading(true);
-    
-    try {
-      // In a real app, this would be an API call to your auth endpoint
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API delay
-      
-      // For demo purposes, we'll accept any login with the test credentials
-      // or use the mock user credentials
-      if ((email === 'test@example.com' && password === 'password123') || 
-          (email === MOCK_USER.email)) {
-        const loggedInUser = MOCK_USER;
-        
-        // Store the user in local storage
-        localStorage.setItem('user', JSON.stringify(loggedInUser));
-        setUser(loggedInUser);
-        
-        toast.success('Successfully logged in!');
-        return true;
-      } else {
-        toast.error('Invalid email or password.');
-        return false;
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      toast.error('An error occurred during login.');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Logout function
-  const logout = () => {
-    localStorage.removeItem('user');
-    setUser(null);
-    toast.success('Successfully logged out!');
-    router.push('/');
-  };
-
-  // Register function
-  const register = async (userData: any): Promise<boolean> => {
-    setIsLoading(true);
-    
-    try {
-      // In a real app, this would be an API call to your registration endpoint
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API delay
-      
-      // For demo purposes, just return success
-      toast.success('Account created successfully!');
-      return true;
-    } catch (error) {
-      console.error('Registration error:', error);
-      toast.error('An error occurred during registration.');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, register }}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
-
-// Custom hook for using auth context
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
 // Providers component that wraps the entire app
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AppErrorBoundary>
-      <SessionProvider>
+      {/* <SessionProvider> */}
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -262,11 +419,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
           disableTransitionOnChange
         >
           <AuthProvider>
-            <BrowserCompatibilityWarning />
+            {isBrowser && <BrowserCompatibilityWarning />}
             {children}
           </AuthProvider>
         </ThemeProvider>
-      </SessionProvider>
+      {/* </SessionProvider> */}
     </AppErrorBoundary>
   );
 } 
